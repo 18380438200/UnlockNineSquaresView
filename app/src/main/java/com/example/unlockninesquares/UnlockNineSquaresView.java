@@ -3,10 +3,14 @@ package com.example.unlockninesquares;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.util.AttributeSet;
 import android.view.View;
+
 import androidx.annotation.Nullable;
+
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -15,18 +19,33 @@ import java.util.List;
  * description 九宫格解锁自定义view
  */
 public class UnlockNineSquaresView extends View {
-    /** 9个点的属性集合 */
+    /**
+     * 9个点的属性集合
+     */
     private List<Dot> dots = new ArrayList<>();
     private final int DOT_COUNT = 9;
     /* 自身宽度高度 */
     private int width;
-    /** 外圆环画笔 */
+    /**
+     * 外圆环画笔
+     */
     private Paint circlePaint;
-    /** 内实心圆画笔 */
+    /**
+     * 内实心圆画笔
+     */
     private Paint innerDotPaint;
     private int outerCircleRadius;
     private int innerCircleRadius;
     private int drawColor;
+    /**
+     * 每个单元个宽度
+     */
+    private int unitWidth;
+    /**
+     * 按照顺序记录需要连线的dot的序号 1-9
+     */
+    private LinkedHashSet<Integer> drawDots = new LinkedHashSet();
+    private Path linePath;
 
     public UnlockNineSquaresView(Context context) {
         super(context);
@@ -44,8 +63,9 @@ public class UnlockNineSquaresView extends View {
 
         width = MeasureSpec.getSize(widthMeasureSpec);
 
-        outerCircleRadius = width/6;
-        innerCircleRadius = width/20;
+        unitWidth = width / 6;
+        outerCircleRadius = width / 10;
+        innerCircleRadius = width / 30;
 
         initDotParams();
 
@@ -57,7 +77,7 @@ public class UnlockNineSquaresView extends View {
     }
 
     private void initPaint() {
-        drawColor = getResources().getColor(R.color.colorAccent);
+        drawColor = getResources().getColor(R.color.blue);
 
         circlePaint = new Paint();
         circlePaint.setColor(drawColor);
@@ -68,31 +88,25 @@ public class UnlockNineSquaresView extends View {
         innerDotPaint = new Paint();
         innerDotPaint.setColor(drawColor);
         innerDotPaint.setAntiAlias(true);
+
+        for (int i=0;i<9;i++) {
+            drawDots.add(i);
+        }
+        linePath = new Path();
     }
 
     /**
-     * 设置各个dot的位置，通过对1-9数字的归行，归列处理，设置每个dot的横纵坐标
+     * 设置各个dot的位置
      */
     private void initDotParams() {
-        for (int i=1;i<=DOT_COUNT;i++) {
-            int paddingLeft = 0;
-            int paddingTop = 0;
-            for (int j=1;j<=3;j++) {
-                if ((i-j)%3==0) {
-                    //第j列，值为1,2,3
-                    paddingLeft = getLeft() + outerCircleRadius*(2*j-1);
-                }
+        //根据行列值来设置当前横纵坐标 (i,j)
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                //i表行数，j表列数，当前为第i行j列位置
+                int left = getLeft() + (j * 2 + 1) * unitWidth;
+                int top = getTop() + (i * 2 + 1) * unitWidth;
+                dots.add(new Dot(left, top));
             }
-
-            for (int j=0;j<3;j++) {
-                if ((i-1)/3==j) {
-                    //第j行，值为0,1,2
-                    paddingTop = getTop() + outerCircleRadius*(2*j+1);
-                }
-            }
-
-            Dot dot = new Dot(paddingLeft, paddingTop);
-            dots.add(dot);
         }
     }
 
@@ -100,14 +114,31 @@ public class UnlockNineSquaresView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-
-        for (int i=0;i<DOT_COUNT;i++) {
+        for (int i = 0; i < DOT_COUNT; i++) {
             canvas.drawCircle(dots.get(i).x, dots.get(i).y, outerCircleRadius, circlePaint);  //画每个dot的外圆
 
             //画每个dot的内圆
             canvas.drawCircle(dots.get(i).x, dots.get(i).y, innerCircleRadius, innerDotPaint);  //画每个dot的外圆
         }
 
+        //对已经存储的点按照顺序连线
+        for (Integer drawDot : drawDots) {
+            linePath.lineTo(dots.get(drawDot).x, dots.get(drawDot).y);
+        }
+
+        canvas.drawPath(linePath, circlePaint);
+    }
+
+    public void setOuterCircleRadius(int outerCircleRadius) {
+        this.outerCircleRadius = outerCircleRadius;
+    }
+
+    public void setInnerCircleRadius(int innerCircleRadius) {
+        this.innerCircleRadius = innerCircleRadius;
+    }
+
+    public void setDrawColor(int drawColor) {
+        this.drawColor = drawColor;
     }
 
     /**
