@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.os.Vibrator;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
@@ -19,9 +20,13 @@ import java.util.List;
  */
 public class UnlockNineSquaresView extends View {
     /**
-     * 9个点的属性集合
+     * 记录9个点的坐标集合
      */
     private List<Dot> dots = new ArrayList<>();
+    /**
+     * 按照顺序记录需要连线的dot的序号
+     */
+    private LinkedHashSet<Integer> drawDots = new LinkedHashSet();
     private final int DOT_COUNT = 9;
     /* 自身宽度高度 */
     private int width;
@@ -29,7 +34,6 @@ public class UnlockNineSquaresView extends View {
      * 外圆环画笔
      */
     private Paint circlePaint;
-//    private Paint circlePaintDeep;
     /**
      * 内实心圆画笔
      */
@@ -53,13 +57,11 @@ public class UnlockNineSquaresView extends View {
      * 每个单元个宽度
      */
     private int unitWidth;
-    /**
-     * 按照顺序记录需要连线的dot的序号 1-9
-     */
-    private LinkedHashSet<Integer> drawDots = new LinkedHashSet();
     private Path linePath;
-    /** 密码长度 */
-    private int pasLength = 7;
+    private float curX, curY;
+    /** 解锁密码数字字符串，默认密码123456 */
+    private String password = "123456";
+    private OnUnlockListener onUnlockListener;
 
     public UnlockNineSquaresView(Context context) {
         super(context);
@@ -77,7 +79,7 @@ public class UnlockNineSquaresView extends View {
 
         width = MeasureSpec.getSize(widthMeasureSpec);
 
-        unitWidth = width / 6;
+        unitWidth = width / 6;  //需要固定为width的1/6
         outerCircleRadius = width / 10;
         innerCircleRadius = width / 45;
         innerTransRadius = width / 30;
@@ -122,6 +124,9 @@ public class UnlockNineSquaresView extends View {
      * 设置各个dot的位置
      */
     private void initDotParams() {
+        drawDots.clear();
+        dots.clear(); //重复调用onMeasure需要重置dots
+
         //根据行列值来设置当前横纵坐标 (j,i)
         for (int i = 0; i < 3; i++) {
             for (int j = 0; j < 3; j++) {
@@ -140,7 +145,12 @@ public class UnlockNineSquaresView extends View {
             case MotionEvent.ACTION_MOVE:
                 collisionDetection(event.getX(), event.getY());
                 break;
+            case MotionEvent.ACTION_UP:
+                resetState();
+                break;
         }
+
+        postInvalidate();
         return true;
     }
 
@@ -150,6 +160,12 @@ public class UnlockNineSquaresView extends View {
      * @param curY 当前触摸y位置
      */
     private void collisionDetection(float curX, float curY) {
+        if (drawDots.size() == password.length()) {  //输完密码结束碰撞检测
+            return;
+        }
+
+        this.curX = curX;
+        this.curY = curY;
 
         for (int i=0;i<dots.size();i++) {
             //遍历每个圆判断当前触摸点是否在某个圆之内
@@ -157,11 +173,57 @@ public class UnlockNineSquaresView extends View {
             double difY = Math.pow(dots.get(i).y - curY, 2);
             if (Math.sqrt(difX + difY) <= outerCircleRadius) {
                 //触摸点与圆心距离小于半径，即判断为触摸点在圆内
-                drawDots.add(i);
 
-                invalidate();
+                if (!drawDots.contains(i)) { //避免重复添加
+                    drawDots.add(i);
+                }
+
+                checkPsdCorrect();
             }
         }
+    }
+
+    /**
+     * 校验密码是否正确
+     */
+    private void checkPsdCorrect() {
+        if (drawDots.size() != password.length()) {
+            return;
+        }
+
+        //输完密码，去验证密码是否正确
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int num : drawDots) {
+            stringBuilder.append(num+1);
+        }
+
+        if (stringBuilder.toString().equals(password)) { //stringBuilder.toString()为当前输入密码
+            if (onUnlockListener != null) {
+                onUnlockListener.unlockSuccess();
+            }
+        } else {
+            if (onUnlockListener != null) {
+                onUnlockListener.unlockFail();
+                virate();
+            }
+        }
+    }
+
+    /**
+     * 解锁失败调用一次震动
+     */
+    private void virate() {
+        Vibrator vibrator = (Vibrator)getContext().getSystemService(Context.VIBRATOR_SERVICE);
+        long [] pattern = {100,400,100,400};
+        vibrator.vibrate(pattern,-1);
+    }
+
+    /**
+     * 每次抬手需要重置最初状态，即未输密码状态
+     */
+    private void resetState() {
+        drawDots.clear();  //选中圆清除
+        linePath.reset();  //连线清除
     }
 
     @Override
@@ -178,9 +240,10 @@ public class UnlockNineSquaresView extends View {
         }
 
         //path移动到第一个点
+        int curPos;
         if (drawDots.iterator().hasNext()) {
-            int first = drawDots.iterator().next();
-            linePath.moveTo(dots.get(first).x, dots.get(first).y);
+            curPos = drawDots.iterator().next();
+            linePath.moveTo(dots.get(curPos).x, dots.get(curPos).y);
         }
 
         circlePaint.setColor(getResources().getColor(R.color.deep_blue));
@@ -199,6 +262,10 @@ public class UnlockNineSquaresView extends View {
 
     }
 
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
     /**
      * 每格圆形类
      */
@@ -210,5 +277,15 @@ public class UnlockNineSquaresView extends View {
             this.x = x;
             this.y = y;
         }
+    }
+
+    public void setOnUnlockListener(OnUnlockListener onUnlockListener) {
+        this.onUnlockListener = onUnlockListener;
+    }
+
+    interface OnUnlockListener {
+        void unlockSuccess();
+
+        void unlockFail();
     }
 }
